@@ -6,7 +6,7 @@ from scipy.spatial.transform import Rotation as R
 # from black import Priority
 import rospy
 import numpy as np
-from geometry_msgs.msg import PoseStamped, PoseArray, PointStamped
+from geometry_msgs.msg import PoseStamped, PoseArray, PointStamped, Point
 from nav_msgs.msg import Odometry, OccupancyGrid
 import rospkg
 import time, os
@@ -77,6 +77,8 @@ class PathPlan(object):
 
         # self.map_pose_of_real_world_origin = msg.info.origin #TODO: Pose object, may get type error
         self.map_set = True
+        
+        print("Map set!")
 
     def odom_cb(self, msg):
         #pass ## REMOVE AND FILL IN ##
@@ -95,8 +97,14 @@ class PathPlan(object):
         ## CODE FOR PATH PLANNING ##
         path_points = self.A_star(start_point, end_point, map)
         print("path_points:", len(path_points))
+        self.trajectory.clear()
         for x,y in path_points:
-            self.trajectory.addPoint(x,y)
+            p = Point()
+            print(self.pixel_to_real_world(0, 0))
+            rw = self.pixel_to_real_world(x, y)
+            p.x = rw[0]
+            p.y = rw[1]
+            self.trajectory.addPoint(p)
         
         # publish trajectory
         self.traj_pub.publish(self.trajectory.toPoseArray())
@@ -207,6 +215,19 @@ class PathPlan(object):
     #     q = origin_pose.orientation
     #     rotation = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
     #     return np.dot(pixel_position.T * map_resolution, rotation)
+    
+    def pixel_to_real_world(self, u, v):
+        pixel_position = np.array([[u, v, 1]]) * self.map_resolution
+        q = self.real_world_origin_orientaion
+        
+        pixel_to_world = R.from_quat([q.x,q.y,q.z,q.w]).inv().as_dcm()
+        pixel_to_world[0, 2] = -self.real_world_origin_position.x
+        pixel_to_world[1, 2] = -self.real_world_origin_position.y
+        
+        rw_position = np.dot(np.linalg.inv(pixel_to_world), pixel_position.T).reshape((3,))[0:2]
+        print("rw:", rw_position, u, v)
+        
+        return rw_position
 
     def real_world_to_pixel(self, x, y): #, map_resolution, origin_pose):
         real_world_position = np.array([[x, y, 1]]) #(3x1)
