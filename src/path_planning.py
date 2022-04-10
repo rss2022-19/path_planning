@@ -44,16 +44,23 @@ class PathPlan(object):
         print("world coordinate:", msg.point.x, msg.point.y)
         pixel_coord = self.real_world_to_pixel(msg.point.x, msg.point.y)
         print("pixel coordinate:", pixel_coord)
-        print("occupied:", self.map[pixel_coord[1], pixel_coord[0]])
+        print("pixel converted to world coordinates:", self.pixel_to_real_world(pixel_coord[0], pixel_coord[1]))
+        print("occupied:", self.map[pixel_coord[1], pixel_coord[0]]) #self.map[pixel_coord[1], pixel_coord[0]])
         return 
 
     def map_cb(self, msg):
         map_nrows, map_ncols = msg.info.height, msg.info.width
 
-        self.map = np.zeros((map_nrows, map_ncols))
+        self.map = np.zeros((map_nrows, map_ncols)) #np.zeros((map_ncols, map_nrows))
 
         for r in range(map_nrows):
             for c in range(map_ncols):
+                # print("r,c:", r,c)
+                # print("(map_ncols*r) + c:", (map_ncols*r) + c)
+                # print("on map:", (c, map_nrows - r -1))
+                # self.map[c, map_nrows - r -1] = msg.data[(map_ncols*r) + c] #r,c]
+
+                # (c x num_rows - r - 1)
                 self.map[r,c] = msg.data[(map_ncols*r) + c]
 
 
@@ -61,11 +68,10 @@ class PathPlan(object):
         # plt.imshow(255 - map_occupied*255, cmap='gray') #viz check
         # plt.show()
 
-        # dilate_kernel = np.ones((5,5), 'uint8')
-
-        # map_occupied_dilated = cv2.dilate(map_occupied, dilate_kernel, iterations=1)
+        dilate_kernel = np.ones((5,5), 'uint8')
+        map_occupied_dilated = cv2.dilate(map_occupied, dilate_kernel, iterations=1)
         # self.map = map_occupied_dilated #(0 if empty, 1 otherwise)
-        self.map = map_occupied
+        self.map = map_occupied_dilated #map_occupied
 
         # plt.imshow(255 - map_occupied_dilated*255, cmap='gray') #viz check
         # plt.show()
@@ -90,17 +96,18 @@ class PathPlan(object):
         start_point = self.current_point
         end_point = (msg.pose.position.x, msg.pose.position.y)
 
-        if self.map_set:
-            self.plan_path(start_point, end_point, self.map)
+        start_point_pix = self.real_world_to_pixel(start_point[0], start_point[1])
+        end_point_pix = self.real_world_to_pixel(end_point[0], end_point[1])
 
-    def plan_path(self, start_point, end_point, map):
+        if self.map_set:
+            self.plan_path(start_point_pix, end_point_pix, self.map)
+
+    def plan_path(self, start_point_pix, end_point_pix, map):
         ## CODE FOR PATH PLANNING ##
-        path_points = self.A_star(start_point, end_point, map)
-        print("path_points:", len(path_points))
+        path_points = self.A_star(start_point_pix, end_point_pix, map)
         self.trajectory.clear()
         for x,y in path_points:
             p = Point()
-            print(self.pixel_to_real_world(0, 0))
             rw = self.pixel_to_real_world(x, y)
             p.x = rw[0]
             p.y = rw[1]
@@ -129,35 +136,33 @@ class PathPlan(object):
             # print("next_x, next_y:", next_x, next_y)
             # print("map_nrows:", map_nrows, "map_ncols:", map_ncols)
             # print("self.map[next_x, next_y]:", self.map[next_x, next_y])
-            if (0 <= current[0]+dx < map_nrows and 0 <= current[1]+dy < map_ncols and self.map[current[0]+dx, current[1]+dy] == 0):
+            if (0 <= current[0]+dx < map_nrows and 0 <= current[1]+dy < map_ncols and self.map[current[1]+dy, current[0]+dx] == 0):
                 neighbors.append((next_x, next_y))
         return neighbors
 
     def A_star(self, start_point, end_point, map):
+        path = [start_point]
+
         #code based on: https://www.redblobgames.com/pathfinding/a-star/introduction.html
-        print("start_point:", start_point, "end_point:", end_point)
-        start_point_y, start_point_x = self.real_world_to_pixel(start_point[0], start_point[1])
-        end_point_y, end_point_x = self.real_world_to_pixel(end_point[0], end_point[1])
-        
-        start_point = (start_point_x, start_point_y)
-        end_point = (end_point_x, end_point_y)
+        print("start_point pixel:", start_point, "end_point pixel:", end_point)
 
         frontier = Queue()
         frontier.put(start_point)
         came_from = dict()
         came_from[start_point] = None
+        found_end = False
 
         while not frontier.empty():
             current = frontier.get()
 
             if current == end_point:
+                found_end = True
                 break
 
             for next in self.get_neighbors(current):
                 if next not in came_from:
                     frontier.put(next)
                     came_from[next] = current
-
 
         ### DIJKSTRAAA
         # frontier = PriorityQueue()
@@ -196,6 +201,7 @@ class PathPlan(object):
         # (493, 978), (592, 982)
 
         # retrace path
+
         current = end_point
         path = []
         while current != start_point:
@@ -205,6 +211,8 @@ class PathPlan(object):
         path.reverse()
 
         print("path:", path)
+
+        
         # path = []
         return path
     
@@ -217,16 +225,16 @@ class PathPlan(object):
     #     return np.dot(pixel_position.T * map_resolution, rotation)
     
     def pixel_to_real_world(self, u, v):
-        pixel_position = np.array([[u, v, 1]]) * self.map_resolution
+
+        pixel_position = np.array([[u, v, 1/self.map_resolution]]) * self.map_resolution
+
         q = self.real_world_origin_orientaion
+        pixel_to_world = R.from_quat([q.x,q.y,q.z,q.w]).as_dcm()
+        pixel_to_world[0, 2] = self.real_world_origin_position.x
+        pixel_to_world[1, 2] = self.real_world_origin_position.y
         
-        pixel_to_world = R.from_quat([q.x,q.y,q.z,q.w]).inv().as_dcm()
-        pixel_to_world[0, 2] = -self.real_world_origin_position.x
-        pixel_to_world[1, 2] = -self.real_world_origin_position.y
-        
-        rw_position = np.dot(np.linalg.inv(pixel_to_world), pixel_position.T).reshape((3,))[0:2]
-        print("rw:", rw_position, u, v)
-        
+        rw_position = np.dot(pixel_to_world, pixel_position.T).reshape((3,))[0:2]
+                
         return rw_position
 
     def real_world_to_pixel(self, x, y): #, map_resolution, origin_pose):
@@ -239,10 +247,9 @@ class PathPlan(object):
 
         #rotation = np.linalg.inv(pixel_to_world_rot)
         rotation = pixel_to_world_rot
+        print(np.dot(np.linalg.inv(rotation), real_world_position.T).reshape((3,)))
         pixel_position = np.dot(np.linalg.inv(rotation), real_world_position.T).reshape((3,))[0:2]
         pixel_position = tuple((pixel_position/self.map_resolution).astype(int))
-        print("pixel_position:", pixel_position)
-
         return pixel_position
 
 if __name__=="__main__":
