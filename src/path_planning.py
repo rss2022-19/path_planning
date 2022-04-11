@@ -17,6 +17,10 @@ import matplotlib.pyplot as plt
 from itertools import permutations
 
 
+class PathNotFoundError(RuntimeError):
+    def __init__(self):
+        super().__init__("Path not found.")
+
 class PathPlan(object):
     """ Listens for goal pose published by RViz and uses it to plan a path from
     current car pose. 
@@ -88,7 +92,7 @@ class PathPlan(object):
             self.plan_path(start_point_pix, end_point_pix, self.map)
 
     def plan_path(self, start_point_pix, end_point_pix, map):
-        path_points = self.bfs(start_point_pix, end_point_pix, map)
+        path_points = self.a_star(start_point_pix, end_point_pix, map)
         self.trajectory.clear()
         for x,y in path_points:
             p = Point()
@@ -103,24 +107,7 @@ class PathPlan(object):
         # visualize trajectory Markers
         self.trajectory.publish_viz()
 
-    
-    # #TODO: helper methods for A* algorithm; may move inside main method or static if only one-use
-    def distance(self, first_point, second_point):
-        return sqrt((first_point[0]-second_point[0])**2 + (first_point[1]-second_point[1])**2)
-
-    def heuristic(self, end_point, current_point):
-        # return self.distance(end_point, current_point) #using regular distance
-        return abs(end_point[0]-current_point[0]) + abs(end_point[1]-current_point[1]) #using Manhanttan distance
-    def get_neighbors(self, current):
-        neighbors = []
-        map_nrows, map_ncols = self.map.shape
-        for (dx, dy) in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0,1), (1,-1), (1,0), (1,1)]:
-            next_x, next_y = current[0]+dx, current[1]+dy
-            if (0 <= current[0]+dx < map_nrows and 0 <= current[1]+dy < map_ncols and self.map[current[1]+dy, current[0]+dx] == 0):
-                neighbors.append((next_x, next_y))
-        return neighbors
-
-    def bfs(self, start, end, map):
+    def a_star(self, start, end, map):
         def neighbors(node):
             map_nrows, map_ncols = map.shape
             for dx in range(-1, 2):
@@ -171,97 +158,11 @@ class PathPlan(object):
 
                     # path = current + [next]
                     # parent[next] = current
-
     
                     frontier.put((next_path_cost + heuristic(next, end), next_path_cost, next))
 
 
-        raise RuntimeError("Path not found.")
-
-
-    # def A_star(self, start_point, end_point, map):
-    #     path = [start_point]
-
-    #     #code based on: https://www.redblobgames.com/pathfinding/a-star/introduction.html
-    #     print("start_point pixel:", start_point, "end_point pixel:", end_point)
-
-    #     frontier = Queue()
-    #     frontier.put(start_point)
-    #     came_from = dict()
-    #     came_from[start_point] = None
-    #     found_end = False
-
-    #     while not frontier.empty():
-    #         current = frontier.get()
-
-    #         if current == end_point:
-    #             found_end = True
-    #             break
-
-    #         for next in self.get_neighbors(current):
-    #             if next not in came_from:
-    #                 frontier.put(next)
-    #                 came_from[next] = current
-
-    #     ### DIJKSTRAAA
-    #     # frontier = PriorityQueue()
-    #     # frontier.put(start_point, 0)
-    #     # came_from = dict()
-    #     # cost_so_far = dict()
-    #     # came_from[start_point] = None
-    #     # cost_so_far[start_point] = 0
-    #     # print("frontier:", frontier)
-
-    #     # print("pixel start_point:", start_point, "pixel end_point:", end_point)
-
-    #     # while not frontier.empty():
-    #     #     print("frontier size:", frontier.qsize())
-    #     #     current = frontier.get()
-    #     #     print("current:", current)
-
-    #     #     if current == end_point:
-    #     #         print("BREAK")
-    #     #         break
-
-    #     #     # print("neighbors:", self.get_neighbors(current))
-
-    #     #     for next in self.get_neighbors(current):
-    #     #         new_cost = cost_so_far[current] + self.distance(current, next)
-    #     #         #TODO: maybe + self.cost(current, next)?
-    #     #         # implement cost method to account for realistic steering?
-    #     #         # for now, just using abs distance
-    #     #         # print("next:", next)
-    #     #         if next not in cost_so_far or new_cost < cost_so_far[next]: #unvisited or visited, but found more optimal path
-    #     #             cost_so_far[next] = new_cost
-    #     #             priority = new_cost + self.heuristic(end_point, next)
-    #     #             frontier.put(next, priority)
-    #     #             came_from[next] = current
-
-    #     # (493, 978), (592, 982)
-
-    #     # retrace path
-
-    #     current = end_point
-    #     path = []
-    #     while current != start_point:
-    #         path.append(current)
-    #         current = came_from[current]
-    #     path.append(start_point)
-    #     path.reverse()
-
-    #     print("path:", path)
-
-        
-    #     # path = []
-    #     return path
-    
-
-    # # def pixel_to_real_world(self, u, v, map_resolution, origin_pose):
-    # #     pixel_position = np.array([[u, v, 1]]) #(3x1)
-
-    # #     q = origin_pose.orientation
-    # #     rotation = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
-    # #     return np.dot(pixel_position.T * map_resolution, rotation)
+        raise PathNotFoundError()
     
     def pixel_to_real_world(self, u, v):
 
