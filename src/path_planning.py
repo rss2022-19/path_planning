@@ -61,11 +61,10 @@ class PathPlan(object):
 
         map_occupied = np.where(self.map != 0, 1, 0).astype('uint8') #self.map[(self.map != 0)]
 
-        dilate_kernel = np.ones((5,5), 'uint8')
-        map_occupied_dilated = cv2.dilate(map_occupied, dilate_kernel, iterations=1)
+        dilate_kernel = np.ones((6,6), 'uint8')
+        map_occupied_dilated = cv2.dilate(map_occupied, dilate_kernel, iterations=3)
         self.map = map_occupied_dilated #map_occupied
 
-        # plt.imshow(255 - map_occupied_dilated*255, cmap='gray') #viz check
         # plt.show()
 
         self.map_resolution = msg.info.resolution
@@ -295,4 +294,11 @@ class PathPlan(object):
 if __name__=="__main__":
     rospy.init_node("path_planning")
     pf = PathPlan()
-    rospy.spin()
+    displayed = False
+    # rospy.spin()
+    while not rospy.is_shutdown():
+        if pf.map_set and not displayed:
+            plt.imshow(255 - pf.map*255, cmap='gray') #viz check
+            plt.show()
+            displayed = True
+        rospy.sleep(1.0)
