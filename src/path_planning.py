@@ -56,44 +56,29 @@ class PathPlan(object):
 
         for r in range(map_nrows):
             for c in range(map_ncols):
-                # print("r,c:", r,c)
-                # print("(map_ncols*r) + c:", (map_ncols*r) + c)
-                # print("on map:", (c, map_nrows - r -1))
-                # self.map[c, map_nrows - r -1] = msg.data[(map_ncols*r) + c] #r,c]
-
-                # (c x num_rows - r - 1)
                 self.map[r,c] = msg.data[(map_ncols*r) + c]
 
 
         map_occupied = np.where(self.map != 0, 1, 0).astype('uint8') #self.map[(self.map != 0)]
-        # plt.imshow(255 - map_occupied*255, cmap='gray') #viz check
-        # plt.show()
 
         dilate_kernel = np.ones((5,5), 'uint8')
         map_occupied_dilated = cv2.dilate(map_occupied, dilate_kernel, iterations=1)
-        # self.map = map_occupied_dilated #(0 if empty, 1 otherwise)
         self.map = map_occupied_dilated #map_occupied
 
         # plt.imshow(255 - map_occupied_dilated*255, cmap='gray') #viz check
         # plt.show()
 
-        #TODO: possible variables of interest?
         self.map_resolution = msg.info.resolution
         self.real_world_origin_position = msg.info.origin.position
         self.real_world_origin_orientaion = msg.info.origin.orientation
 
-        # self.map_pose_of_real_world_origin = msg.info.origin #TODO: Pose object, may get type error
         self.map_set = True
-        
         print("Map set!")
 
     def odom_cb(self, msg):
-        #pass ## REMOVE AND FILL IN ##
-        # print("ODOM CALLBACK")
         self.current_point = (msg.pose.pose.position.x, msg.pose.pose.position.y)
         
     def goal_cb(self, msg):
-        #pass ## REMOVE AND FILL IN ##
         start_point = self.current_point
         end_point = (msg.pose.position.x, msg.pose.position.y)
 
@@ -104,7 +89,6 @@ class PathPlan(object):
             self.plan_path(start_point_pix, end_point_pix, self.map)
 
     def plan_path(self, start_point_pix, end_point_pix, map):
-        ## CODE FOR PATH PLANNING ##
         path_points = self.bfs(start_point_pix, end_point_pix, map)
         self.trajectory.clear()
         for x,y in path_points:
@@ -129,14 +113,10 @@ class PathPlan(object):
         # return self.distance(end_point, current_point) #using regular distance
         return abs(end_point[0]-current_point[0]) + abs(end_point[1]-current_point[1]) #using Manhanttan distance
     def get_neighbors(self, current):
-        # print("current occupied?:", self.map[current[0], current[1]])
         neighbors = []
         map_nrows, map_ncols = self.map.shape
         for (dx, dy) in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0,1), (1,-1), (1,0), (1,1)]:
             next_x, next_y = current[0]+dx, current[1]+dy
-            # print("next_x, next_y:", next_x, next_y)
-            # print("map_nrows:", map_nrows, "map_ncols:", map_ncols)
-            # print("self.map[next_x, next_y]:", self.map[next_x, next_y])
             if (0 <= current[0]+dx < map_nrows and 0 <= current[1]+dy < map_ncols and self.map[current[1]+dy, current[0]+dx] == 0):
                 neighbors.append((next_x, next_y))
         return neighbors
@@ -146,10 +126,8 @@ class PathPlan(object):
             map_nrows, map_ncols = map.shape
             for dx in range(-1, 2):
                 for dy in range(-1, 2):
-                    # print(dx, dy)
                     if 0 <= node[1]+dy < map_nrows and 0 <= node[0]+dx < map_ncols and self.map[node[1]+dy, node[0]+dx] == 0:
                         yield (node[0] + dx, node[1] + dy)
-        
         print(start, end)
 
         def cost(path):
@@ -158,118 +136,133 @@ class PathPlan(object):
             for node in path[1:]:
                 cost += sqrt((curr[0] - node[0]) ** 2 + (curr[1] - node[1]) ** 2)
                 curr = node
-            
             return cost
 
-        def h(node, target):
+        def heuristic(node, target):
             return sqrt((target[0] - node[0]) ** 2 + (target[1] - node[1]) ** 2)
         
         frontier = PriorityQueue()
-        frontier.put((0, 0, [start]))
+        frontier.put((0, 0, start)) #(priority, path cost, node itself)
 
-        min_cost = {}
+        min_cost = {} #node: min_cost, min_cost parent
 
         while not frontier.empty():
             costph, costp, current = frontier.get()
 
-            if current[-1] == end:
+            if current == end:
                 print("Found path [", costph, "]", current)
-                return current
+
+                #retrace path
+                path = [end]
+                while path[-1] != start:
+                    _mcost, node = min_cost[path[-1]]
+                    path.append(node)
+
+                print("here", path)
+                return list(reversed(path))
+
+                # return current
 
             # print("considering", current, costp, costph)
 
-            for next in neighbors(current[-1]):
-                if next not in min_cost or min_cost[next][0] > costp + h(current[-1], next):
-                    min_cost[next] = (costp + h(current[-1], next), current)
-                    path = current + [next]
-                    frontier.put((cost(path) + h(next, end), cost(path), path))
-        
+            for next in neighbors(current):
+                if next not in min_cost or min_cost[next][0] > costp + heuristic(current, next):
+                    next_path_cost = heuristic(current, next)  + costp
+                    min_cost[next] = (next_path_cost, current)
+
+                    # path = current + [next]
+                    # parent[next] = current
+
+    
+                    frontier.put((next_path_cost + heuristic(next, end), next_path_cost, next))
+
+
         raise RuntimeError("Path not found.")
 
 
-    def A_star(self, start_point, end_point, map):
-        path = [start_point]
+    # def A_star(self, start_point, end_point, map):
+    #     path = [start_point]
 
-        #code based on: https://www.redblobgames.com/pathfinding/a-star/introduction.html
-        print("start_point pixel:", start_point, "end_point pixel:", end_point)
+    #     #code based on: https://www.redblobgames.com/pathfinding/a-star/introduction.html
+    #     print("start_point pixel:", start_point, "end_point pixel:", end_point)
 
-        frontier = Queue()
-        frontier.put(start_point)
-        came_from = dict()
-        came_from[start_point] = None
-        found_end = False
+    #     frontier = Queue()
+    #     frontier.put(start_point)
+    #     came_from = dict()
+    #     came_from[start_point] = None
+    #     found_end = False
 
-        while not frontier.empty():
-            current = frontier.get()
+    #     while not frontier.empty():
+    #         current = frontier.get()
 
-            if current == end_point:
-                found_end = True
-                break
+    #         if current == end_point:
+    #             found_end = True
+    #             break
 
-            for next in self.get_neighbors(current):
-                if next not in came_from:
-                    frontier.put(next)
-                    came_from[next] = current
+    #         for next in self.get_neighbors(current):
+    #             if next not in came_from:
+    #                 frontier.put(next)
+    #                 came_from[next] = current
 
-        ### DIJKSTRAAA
-        # frontier = PriorityQueue()
-        # frontier.put(start_point, 0)
-        # came_from = dict()
-        # cost_so_far = dict()
-        # came_from[start_point] = None
-        # cost_so_far[start_point] = 0
-        # print("frontier:", frontier)
+    #     ### DIJKSTRAAA
+    #     # frontier = PriorityQueue()
+    #     # frontier.put(start_point, 0)
+    #     # came_from = dict()
+    #     # cost_so_far = dict()
+    #     # came_from[start_point] = None
+    #     # cost_so_far[start_point] = 0
+    #     # print("frontier:", frontier)
 
-        # print("pixel start_point:", start_point, "pixel end_point:", end_point)
+    #     # print("pixel start_point:", start_point, "pixel end_point:", end_point)
 
-        # while not frontier.empty():
-        #     print("frontier size:", frontier.qsize())
-        #     current = frontier.get()
-        #     print("current:", current)
+    #     # while not frontier.empty():
+    #     #     print("frontier size:", frontier.qsize())
+    #     #     current = frontier.get()
+    #     #     print("current:", current)
 
-        #     if current == end_point:
-        #         print("BREAK")
-        #         break
+    #     #     if current == end_point:
+    #     #         print("BREAK")
+    #     #         break
 
-        #     # print("neighbors:", self.get_neighbors(current))
+    #     #     # print("neighbors:", self.get_neighbors(current))
 
-        #     for next in self.get_neighbors(current):
-        #         new_cost = cost_so_far[current] + self.distance(current, next)
-        #         #TODO: maybe + self.cost(current, next)?
-        #         # implement cost method to account for realistic steering?
-        #         # for now, just using abs distance
-        #         # print("next:", next)
-        #         if next not in cost_so_far or new_cost < cost_so_far[next]: #unvisited or visited, but found more optimal path
-        #             cost_so_far[next] = new_cost
-        #             priority = new_cost + self.heuristic(end_point, next)
-        #             frontier.put(next, priority)
-        #             came_from[next] = current
+    #     #     for next in self.get_neighbors(current):
+    #     #         new_cost = cost_so_far[current] + self.distance(current, next)
+    #     #         #TODO: maybe + self.cost(current, next)?
+    #     #         # implement cost method to account for realistic steering?
+    #     #         # for now, just using abs distance
+    #     #         # print("next:", next)
+    #     #         if next not in cost_so_far or new_cost < cost_so_far[next]: #unvisited or visited, but found more optimal path
+    #     #             cost_so_far[next] = new_cost
+    #     #             priority = new_cost + self.heuristic(end_point, next)
+    #     #             frontier.put(next, priority)
+    #     #             came_from[next] = current
 
-        # (493, 978), (592, 982)
+    #     # (493, 978), (592, 982)
 
-        # retrace path
+    #     # retrace path
 
-        current = end_point
-        path = []
-        while current != start_point:
-            path.append(current)
-            current = came_from[current]
-        path.append(start_point)
-        path.reverse()
+    #     current = end_point
+    #     path = []
+    #     while current != start_point:
+    #         path.append(current)
+    #         current = came_from[current]
+    #     path.append(start_point)
+    #     path.reverse()
 
-        print("path:", path)
+    #     print("path:", path)
 
         
-        # path = []
-        return path
+    #     # path = []
+    #     return path
     
 
-    # def pixel_to_real_world(self, u, v, map_resolution, origin_pose):
-    #     pixel_position = np.array([[u, v, 1]]) #(3x1)
+    # # def pixel_to_real_world(self, u, v, map_resolution, origin_pose):
+    # #     pixel_position = np.array([[u, v, 1]]) #(3x1)
 
-    #     q = origin_pose.orientation
-    #     rotation = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
-    #     return np.dot(pixel_position.T * map_resolution, rotation)
+    # #     q = origin_pose.orientation
+    # #     rotation = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
+    # #     return np.dot(pixel_position.T * map_resolution, rotation)
     
     def pixel_to_real_world(self, u, v):
 
