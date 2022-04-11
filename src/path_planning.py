@@ -68,12 +68,14 @@ class PathPlan(object):
         # plt.imshow(255 - map_occupied*255, cmap='gray') #viz check
         # plt.show()
 
-        dilate_kernel = np.ones((5,5), 'uint8')
-        map_occupied_dilated = cv2.dilate(map_occupied, dilate_kernel, iterations=1)
+        dilate_kernel = np.ones((5, 5), 'uint8')
+        map_occupied_dilated = cv2.dilate(map_occupied, dilate_kernel, iterations=5)
+
         # self.map = map_occupied_dilated #(0 if empty, 1 otherwise)
-        self.map = map_occupied_dilated #map_occupied
+        # self.map = map_occupied_dilated #map_occupied
 
         # plt.imshow(255 - map_occupied_dilated*255, cmap='gray') #viz check
+        # plt.imshow(map_occupied_dilated, cmap="gray")
         # plt.show()
 
         #TODO: possible variables of interest?
@@ -99,11 +101,14 @@ class PathPlan(object):
         start_point_pix = self.real_world_to_pixel(start_point[0], start_point[1])
         end_point_pix = self.real_world_to_pixel(end_point[0], end_point[1])
 
+        print("start_point_pix:", start_point_pix)
+        print("end_point_pix:", end_point_pix)
+
         if self.map_set:
             self.plan_path(start_point_pix, end_point_pix, self.map)
 
     def plan_path(self, start_point_pix, end_point_pix, map):
-        ## CODE FOR PATH PLANNING ##
+        ## CODE FOR PATH PLANNING ##pin
         path_points = self.A_star(start_point_pix, end_point_pix, map)
         self.trajectory.clear()
         for x,y in path_points:
@@ -136,7 +141,7 @@ class PathPlan(object):
             # print("next_x, next_y:", next_x, next_y)
             # print("map_nrows:", map_nrows, "map_ncols:", map_ncols)
             # print("self.map[next_x, next_y]:", self.map[next_x, next_y])
-            if (0 <= current[0]+dx < map_nrows and 0 <= current[1]+dy < map_ncols and self.map[current[1]+dy, current[0]+dx] == 0):
+            if (0 <= next_y < map_nrows and 0 <=  next_x < map_ncols and self.map[current[1]+dy, current[0]+dx] == 0):
                 neighbors.append((next_x, next_y))
         return neighbors
 
@@ -144,71 +149,68 @@ class PathPlan(object):
         path = [start_point]
 
         #code based on: https://www.redblobgames.com/pathfinding/a-star/introduction.html
-        print("start_point pixel:", start_point, "end_point pixel:", end_point)
+        # print("start_point pixel:", start_point, "end_point pixel:", end_point)
 
-        frontier = Queue()
-        frontier.put(start_point)
-        came_from = dict()
-        came_from[start_point] = None
-        found_end = False
-
-        while not frontier.empty():
-            current = frontier.get()
-
-            if current == end_point:
-                found_end = True
-                break
-
-            for next in self.get_neighbors(current):
-                if next not in came_from:
-                    frontier.put(next)
-                    came_from[next] = current
-
-        ### DIJKSTRAAA
-        # frontier = PriorityQueue()
-        # frontier.put(start_point, 0)
+        # frontier = Queue()
+        # frontier.put(start_point)
         # came_from = dict()
-        # cost_so_far = dict()
         # came_from[start_point] = None
-        # cost_so_far[start_point] = 0
-        # print("frontier:", frontier)
-
-        # print("pixel start_point:", start_point, "pixel end_point:", end_point)
+        # found_end = False
 
         # while not frontier.empty():
-        #     print("frontier size:", frontier.qsize())
         #     current = frontier.get()
-        #     print("current:", current)
 
         #     if current == end_point:
-        #         print("BREAK")
+        #         found_end = True
         #         break
 
-        #     # print("neighbors:", self.get_neighbors(current))
-
         #     for next in self.get_neighbors(current):
-        #         new_cost = cost_so_far[current] + self.distance(current, next)
-        #         #TODO: maybe + self.cost(current, next)?
-        #         # implement cost method to account for realistic steering?
-        #         # for now, just using abs distance
-        #         # print("next:", next)
-        #         if next not in cost_so_far or new_cost < cost_so_far[next]: #unvisited or visited, but found more optimal path
-        #             cost_so_far[next] = new_cost
-        #             priority = new_cost + self.heuristic(end_point, next)
-        #             frontier.put(next, priority)
+        #         if next not in came_from:
+        #             frontier.put(next)
         #             came_from[next] = current
 
-        # (493, 978), (592, 982)
+        ## DIJKSTRAAA
+        frontier = PriorityQueue()
+        frontier.put(start_point, 0)
+        came_from = dict()
+        cost_so_far = dict()
+        came_from[start_point] = None
+        cost_so_far[start_point] = 0
+        found_path = False
 
-        # retrace path
+        while not frontier.empty():
+            # print("frontier:", frontier)
+            current = frontier.get()
+            # print("frontier size:", frontier.qsize())
+            # print("current:", current)
+            if current == end_point:
+                found_path = True
+                break
 
-        current = end_point
+            # print("neighbors:", self.get_neighbors(current))
+
+            for next in self.get_neighbors(current):
+                new_cost = cost_so_far[current] + self.distance(current, next)
+                #TODO: maybe + self.cost(current, next)?
+                # implement cost method to account for realistic steering?
+                # for now, just using abs distance
+                # print("next:", next)
+                if next not in cost_so_far or new_cost < cost_so_far[next]: #unvisited or visited, but found more optimal path
+                    cost_so_far[next] = new_cost
+                    priority = new_cost + self.heuristic(end_point, next)
+                    # priority = self.heuristic(end_point, next)
+                    frontier.put(next, priority)
+                    came_from[next] = current
         path = []
-        while current != start_point:
-            path.append(current)
-            current = came_from[current]
-        path.append(start_point)
-        path.reverse()
+        
+        if found_path:
+            # retrace path
+            current = end_point
+            while current != start_point:
+                path.append(current)
+                current = came_from[current]
+            path.append(start_point)
+            path.reverse()
 
         print("path:", path)
 
