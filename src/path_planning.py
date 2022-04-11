@@ -14,6 +14,7 @@ from utils import LineTrajectory
 from math import sqrt
 import cv2
 import matplotlib.pyplot as plt
+from itertools import permutations
 
 
 class PathPlan(object):
@@ -104,7 +105,7 @@ class PathPlan(object):
 
     def plan_path(self, start_point_pix, end_point_pix, map):
         ## CODE FOR PATH PLANNING ##
-        path_points = self.A_star(start_point_pix, end_point_pix, map)
+        path_points = self.bfs(start_point_pix, end_point_pix, map)
         self.trajectory.clear()
         for x,y in path_points:
             p = Point()
@@ -139,6 +140,52 @@ class PathPlan(object):
             if (0 <= current[0]+dx < map_nrows and 0 <= current[1]+dy < map_ncols and self.map[current[1]+dy, current[0]+dx] == 0):
                 neighbors.append((next_x, next_y))
         return neighbors
+
+    def bfs(self, start, end, map):
+        def neighbors(node):
+            map_nrows, map_ncols = map.shape
+            for dx in range(-1, 2):
+                for dy in range(-1, 2):
+                    # print(dx, dy)
+                    if 0 <= node[1]+dy < map_nrows and 0 <= node[0]+dx < map_ncols and self.map[node[1]+dy, node[0]+dx] == 0:
+                        yield (node[0] + dx, node[1] + dy)
+        
+        print(start, end)
+
+        def cost(path):
+            curr = path[0]
+            cost = 0
+            for node in path[1:]:
+                cost += sqrt((curr[0] - node[0]) ** 2 + (curr[1] - node[1]) ** 2)
+                curr = node
+            
+            return cost
+
+        def h(node, target):
+            return sqrt((target[0] - node[0]) ** 2 + (target[1] - node[1]) ** 2)
+        
+        frontier = PriorityQueue()
+        frontier.put((0, 0, [start]))
+
+        min_cost = {}
+
+        while not frontier.empty():
+            costph, costp, current = frontier.get()
+
+            if current[-1] == end:
+                print("Found path [", costph, "]", current)
+                return current
+
+            # print("considering", current, costp, costph)
+
+            for next in neighbors(current[-1]):
+                if next not in min_cost or min_cost[next][0] > costp + h(current[-1], next):
+                    min_cost[next] = (costp + h(current[-1], next), current)
+                    path = current + [next]
+                    frontier.put((cost(path) + h(next, end), cost(path), path))
+        
+        raise RuntimeError("Path not found.")
+
 
     def A_star(self, start_point, end_point, map):
         path = [start_point]
