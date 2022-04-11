@@ -19,7 +19,7 @@ from itertools import permutations
 
 class PathNotFoundError(RuntimeError):
     def __init__(self):
-        super().__init__("Path not found.")
+        RuntimeError.__init__(self, "Path not found.")
 
 class PathPlan(object):
     """ Listens for goal pose published by RViz and uses it to plan a path from
