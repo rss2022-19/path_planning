@@ -144,9 +144,10 @@ class PathPlan(object):
                     _mcost, node = min_cost[path[-1]]
                     path.append(node)
 
-                print("here", path)
-                return list(reversed(path))
-
+                path = list(reversed(path))
+                new_path = [path[i] for i in range(0, len(path), 10)] 
+                print("len(path)", len(path), "len new_path:", len(new_path))
+                return new_path
                 # return current
 
             # print("considering", current, costp, costph)
