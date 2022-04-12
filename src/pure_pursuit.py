@@ -32,13 +32,15 @@ class PurePursuit(object):
         self.odom_sub    = rospy.Subscriber(self.odom_topic, Odometry, self.pose_callback, queue_size = 1)
         self.drive_pub   = rospy.Publisher("/drive", AckermannDriveStamped, queue_size=1)
 
-        self.goal_pub = rospy.Publisher("/goal", Marker, queue_size=1)
+        self.goal_pub = rospy.Publisher("/goalpos", Marker, queue_size=1)
         
         #How many segments to search ahead of the nearest
-        self.segment_lookahead = 3
+        #self.segment_lookahead = 3
         self.segments = None
         self.segment_index = None
         self.goal_point = None
+        
+        self.kp_velocity = rospy.get_param("kp_velocity", 0.8)
         
     def trajectory_callback(self, msg):
         ''' Clears the currently followed trajectory, and loads the new one from the message
@@ -54,9 +56,10 @@ class PurePursuit(object):
         # Find Circle Intersection
         # Start at nearest segment and search next three segments
         #
-        search_end_index = self.segment_index+self.segment_lookahead
-        if search_end_index >  self.segments.shape[0]-1:
-            search_end_index = self.segments.shape[0]-1
+        #search_end_index = self.segment_index+self.segment_lookahead
+        #if search_end_index >  self.segments.shape[0]-1:
+            #search_end_index = self.segments.shape[0]-1
+        search_end_index = self.segments.shape[0]-1
         
         goal_point = None
         
@@ -156,7 +159,11 @@ class PurePursuit(object):
             if self.goal_point is None:
                 self.goal_point = self.segments[self.segment_index + 1]
             VisualizationTools.plot_line([self.goal_point[0], self.goal_point[0] + .01], [self.goal_point[1], self.goal_point[1] + .01], self.goal_pub, frame="/map")
-
+            
+            end_point = self.segments[-1]
+            dist_error = np.linalg.norm(end_point-self.robot_pose[0:2])
+            velocity = self.kp_velocity*dist_error
+            velocity_out = np.clip(velocity,-self.speed,self.speed)
 
         x_c, y_c, theta_c = self.robot_pose
         x_g, y_g = self.goal_point
@@ -189,7 +196,7 @@ class PurePursuit(object):
         if self.segments is None:
             drive_msg.drive.speed = 0
         else:
-            drive_msg.drive.speed = self.speed
+            drive_msg.drive.speed = velocity_out
         drive_msg.drive.acceleration = 0
         drive_msg.drive.jerk = 0
         self.drive_pub.publish(drive_msg)
