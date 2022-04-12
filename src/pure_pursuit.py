@@ -54,19 +54,16 @@ class PurePursuit(object):
     def find_circle_interesection(self):
         #
         # Find Circle Intersection
-        # Start at nearest segment and search next three segments
-        #
-        #search_end_index = self.segment_index+self.segment_lookahead
-        #if search_end_index >  self.segments.shape[0]-1:
-            #search_end_index = self.segments.shape[0]-1
+        # Start at nearest segment and search next segments
+
         search_end_index = self.segments.shape[0]-1
         
         goal_point = None
         
-        #Check nearest segment as well as a couple segments up. Choose the furthest goal point
+        #Check nearest segment as well as all segments upstream. Choose the furthest goal point
         for i in range(self.segment_index,search_end_index):
-            P1 = self.segments[self.segment_index]
-            P2 = self.segments[self.segment_index+1]
+            P1 = self.segments[i]
+            P2 = self.segments[i+1]
             Q = self.robot_pose[:2]
             r = self.lookahead
             V = P2-P1
@@ -88,7 +85,6 @@ class PurePursuit(object):
                
                 #Choose the solution that is actually on the line segmnet (0 <= t <= 1)
                 if ((t1 < 0. or t1 > 1.) and (t2 < 0. or t2 > 1.)):
-                    #No intersection on segment
                     pass
                 elif ((t1 >= 0. or t1 <= 1.) and (t2 < 0. or t2 > 1.)):
                     goal_point = P1+t1*V
@@ -146,25 +142,31 @@ class PurePursuit(object):
     def pose_callback(self, msg):
         ''' Clears the currently followed trajectory, and loads the new one from the message
         '''
+        #Get robot x,y,theta from odometry
         pose = [msg.pose.pose.position.x+self.base_link_offset, msg.pose.pose.position.y]
         r = R.from_quat([msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w])
         theta = r.as_euler('XYZ')[2]
         pose.append(theta)
         self.robot_pose = np.array(pose)
-
+        
+        #If we have a trajectory, find out where to drive towards
         if self.segments is not None:
             self.segment_index = self.find_nearest_segment()
             self.goal_point = self.find_circle_interesection()
-
+            
+            #If no intersection between lookahead circle and trajectory, drive towards nearest segment
             if self.goal_point is None:
                 self.goal_point = self.segments[self.segment_index + 1]
+            #Plot goal point
             VisualizationTools.plot_line([self.goal_point[0], self.goal_point[0] + .01], [self.goal_point[1], self.goal_point[1] + .01], self.goal_pub, frame="/map")
             
+            #Velovy proportional control. Slow down and stop once we get close to end of trajectory
             end_point = self.segments[-1]
             dist_error = np.linalg.norm(end_point-self.robot_pose[0:2])
             velocity = self.kp_velocity*dist_error
             velocity_out = np.clip(velocity,-self.speed,self.speed)
-
+        
+        #Convert goal point from map frame to robot frame
         x_c, y_c, theta_c = self.robot_pose
         x_g, y_g = self.goal_point
         T_R_W = np.array([[ np.cos(theta_c), -np.sin(theta_c), x_c ],
@@ -179,7 +181,8 @@ class PurePursuit(object):
 
         x = T_G_R[0][2]
         y = T_G_R[1][2]
-
+        
+        #Determine steering
         theta = np.arctan(y/x) # bearing
         d = np.sqrt(x**2 + y**2) # euclidean distance
         delta = np.arctan((2*self.wheelbase_length*np.sin(theta))/d) # steering angle 
