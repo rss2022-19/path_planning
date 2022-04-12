@@ -56,12 +56,7 @@ class PathPlan(object):
     def map_cb(self, msg):
         map_nrows, map_ncols = msg.info.height, msg.info.width
 
-        self.map = np.zeros((map_nrows, map_ncols)) #np.zeros((map_ncols, map_nrows))
-
-        for r in range(map_nrows):
-            for c in range(map_ncols):
-                self.map[r,c] = msg.data[(map_ncols*r) + c]
-
+        self.map = np.array(msg.data).reshape((map_nrows, map_ncols)) #np.zeros((map_ncols, map_nrows))
 
         map_occupied = np.where(self.map != 0, 1, 0).astype('uint8') #self.map[(self.map != 0)]
 
@@ -199,7 +194,7 @@ if __name__=="__main__":
     # rospy.spin()
     while not rospy.is_shutdown():
         if pf.map_set and not displayed:
-            plt.imshow(255 - pf.map*255, cmap='gray') #viz check
-            plt.show()
+            # plt.imshow(255 - pf.map*255, cmap='gray') #viz check
+            # plt.show()
             displayed = True
         rospy.sleep(1.0)
