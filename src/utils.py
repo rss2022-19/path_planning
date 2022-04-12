@@ -196,6 +196,7 @@ class LineTrajectory(object):
             marker.lifetime = rospy.Duration.from_sec(duration)
             if should_publish:
                 marker.action = marker.ADD
+                marker.pose.orientation.w = 1.0
                 marker.scale.x = 0.3
                 marker.color.r = 1.0
                 marker.color.g = 1.0
